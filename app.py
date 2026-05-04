@@ -55,6 +55,7 @@ from hvac_advanced import (
 from envelope_design import (
     wall_u_value,
     roof_u_value,
+    window_u_value,
     window_to_wall_ratio,
     shading_depth,
     glass_status,
@@ -113,7 +114,6 @@ occupancy = st.sidebar.number_input("Occupancy (Persons)", min_value=1, value=50
 monthly_kwh = st.sidebar.number_input("Monthly Energy Consumption (kWh)", min_value=0.0, value=120000.0)
 tariff = st.sidebar.number_input("Electricity Tariff (₹/kWh)", min_value=0.0, value=9.0)
 
-
 st.sidebar.header("Passive Design Inputs")
 
 roof_insulation = st.sidebar.checkbox("Roof Insulation Available", value=True)
@@ -122,20 +122,21 @@ glazing = st.sidebar.selectbox("Window Glazing Type", ["Single Glass", "Double G
 orientation = st.sidebar.selectbox("Building Orientation Quality", ["Poor", "Average", "Good", "Optimized"])
 shading = st.sidebar.checkbox("External Shading / Solar Control Available", value=True)
 
-
 st.sidebar.header("Envelope Design Inputs")
 
-wall_r_value = st.sidebar.number_input("Wall R-Value (m²K/W)", value=1.80)
+wall_u_value = st.sidebar.number_input("Wall U-Value (W/m²K)", value=1.80)
 inside_surface_r = st.sidebar.number_input("Inside Surface Resistance RSI", value=0.13)
 
-roof_base_r = st.sidebar.number_input("Roof Base R-Value (m²K/W)", value=0.30)
+roof_u_value = st.sidebar.number_input("Roof Base U-Value (W/m²K)", value=0.30)
 roof_insulation_thickness = st.sidebar.number_input("Roof Insulation Thickness (mm)", value=50.0)
 roof_insulation_k = st.sidebar.number_input("Roof Insulation Conductivity k (W/mK)", value=0.035)
+roof_area_m2 = st.sidebar.number_input("Roof Area (m²)", value=1000.0)
 
-wall_area = st.sidebar.number_input("External Wall Area (m²)", value=1000.0)
-window_area = st.sidebar.number_input("Window Glass Area (m²)", value=300.0)
+wall_area_m2 = st.sidebar.number_input("External Wall Area (m²)", value=1000.0)
+window_area_m2 = st.sidebar.number_input("Window Glass Area (m²)", value=300.0)
 
 glass_shgc = st.sidebar.number_input("Glass SHGC", min_value=0.05, max_value=0.90, value=0.35)
+window_u_value = st.sidebar.number_input("Window Base U-Value (W/m²K)", value=0.30)
 
 window_height = st.sidebar.number_input("Window Height (m)", value=1.5)
 solar_altitude = st.sidebar.number_input("Solar Altitude Angle (degree)", value=45.0)
@@ -182,7 +183,57 @@ co2_ppm = st.sidebar.number_input("Indoor CO₂ Level (ppm)", min_value=300.0, v
 
 st.sidebar.header("Designer Sizing Inputs")
 
-load_w_m2 = st.sidebar.number_input("Cooling Load Factor (W/m²)", min_value=20.0, value=120.0)
+# Translate Insulation Checkboxes to U-Values (W/m2.K)
+# Uninsulated brick/concrete is typically ~2.5 U-value; Insulated is ~0.4
+actual_wall_u_value = 0.4 if wall_insulation else 2.5 
+actual_roof_u_value = 0.3 if roof_insulation else 2.0
+
+# Translate Glazing Dropdown to U-Value and SHGC (Solar Heat Gain Coefficient)
+if glazing == "Single Glass":
+    actual_window_u = 5.8
+    actual_shgc = 0.85  # Lets in 85% of solar heat
+elif glazing == "Double Glazing":
+    actual_window_u = 2.8
+    actual_shgc = 0.70  # Lets in 70% of solar heat
+elif glazing == "Low-E Glass":
+    actual_window_u = 1.5
+    actual_shgc = 0.40  # Blocks most solar heat, lets in light
+
+# Translate Shading Checkbox to a Solar Modifier
+# External shading physically blocks the sun from hitting the glass. 
+# We'll assume a 50% reduction in direct solar heat if shading is active.
+shading_multiplier = 0.5 if shading else 1.0
+
+# Translate Orientation Quality to Peak Solar Irradiance (W/m2)
+# "Poor" orientation means heavy East/West glass (high morning/afternoon sun).
+# "Optimized" means heavy North/South glass (easy to shade, lower peak impact).
+irradiance_map = {
+    "Poor": 600,       # High peak solar load
+    "Average": 500,
+    "Good": 400,
+    "Optimized": 300   # Lower peak solar load
+}
+peak_solar_irradiance = irradiance_map[orientation]
+
+# Envelope Transmission (Sensible Conduction)
+delta_T = max(0, outdoor_dbt - indoor_dbt) 
+wall_load_w = actual_wall_u_value * wall_area_m2 * delta_T
+roof_load_w = actual_roof_u_value * roof_area_m2 * delta_T
+glass_cond_w = actual_window_u * window_area_m2 * delta_T
+
+# Solar Gain (Sensible Radiation)
+# Notice how SHGC, Shading Multiplier, and Orientation (Irradiance) all interact here!
+glass_solar_w = window_area_m2 * actual_shgc * peak_solar_irradiance * shading_multiplier
+
+# Internal Loads
+internal_load_w = area_m2 * 25 # Standard commercial 25 W/m2
+
+# Total Sensible Room Load
+room_sensible_kw = (wall_load_w + roof_load_w + glass_cond_w + glass_solar_w + internal_load_w) / 1000
+
+# Calculate Tons of Refrigeration
+concept_cooling_tr = (room_sensible_kw + fresh_air_kw) / 3.516
+
 cfm_per_person = st.sidebar.number_input("Fresh Air (CFM/person)", min_value=5.0, value=15.0)
 
 connected_kw = st.sidebar.number_input("Connected Electrical Load (kW)", min_value=0.0, value=1000.0)
@@ -317,7 +368,7 @@ recommendations = get_recommendations(
 
 # Designer sizing calculations
 
-concept_cooling_kw, concept_cooling_tr = cooling_load_from_area(area_m2, load_w_m2)
+# concept_cooling_kw, concept_cooling_tr = cooling_load_from_area(area_m2, load_w_m2)
 total_fresh_air_cfm = fresh_air_cfm(occupancy, cfm_per_person)
 total_ahu_cfm = ahu_cfm(concept_cooling_tr)
 
