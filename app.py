@@ -111,8 +111,12 @@ building_type = st.sidebar.selectbox(
 area_m2 = st.sidebar.number_input("Built-up Area (m²)", min_value=1.0, value=10000.0)
 occupancy = st.sidebar.number_input("Occupancy (Persons)", min_value=1, value=500)
 
-monthly_kwh = st.sidebar.number_input("Monthly Energy Consumption (kWh)", min_value=0.0, value=120000.0)
-tariff = st.sidebar.number_input("Electricity Tariff (₹/kWh)", min_value=0.0, value=9.0)
+tariff = st.sidebar.number_input("Blended Electricity Tariff (₹/kWh)", min_value=0.0, value=9.0)
+
+# Calculate OPEX based on the SIMULATED energy
+annual_energy_bill = simulated_annual_kwh * tariff
+
+
 
 st.sidebar.header("Passive Design Inputs")
 
@@ -226,7 +230,16 @@ glass_cond_w = actual_window_u * window_area_m2 * delta_T
 glass_solar_w = window_area_m2 * actual_shgc * peak_solar_irradiance * shading_multiplier
 
 # Internal Loads
-internal_load_w = area_m2 * 25 # Standard commercial 25 W/m2
+
+# Add Human Heat to Internal Loads
+# A seated adult generates roughly 75 Watts of sensible heat (and 55 Watts of latent)
+occupancy_sensible_w = occupancy * 75
+
+# Equipment and Lighting load (Standard commercial ~15 W/m2)
+lighting_equip_w = area_m2 * 15 
+
+# Updated Internal Loads for the Heat Balance
+internal_load_w = occupancy_sensible_w + lighting_equip_w
 
 # Total Sensible Room Load
 room_sensible_kw = (wall_load_w + roof_load_w + glass_cond_w + glass_solar_w + internal_load_w) / 1000
@@ -235,6 +248,22 @@ room_sensible_kw = (wall_load_w + roof_load_w + glass_cond_w + glass_solar_w + i
 concept_cooling_tr = (room_sensible_kw + fresh_air_kw) / 3.516
 
 cfm_per_person = st.sidebar.number_input("Fresh Air (CFM/person)", min_value=5.0, value=15.0)
+
+# Base Building Loads (Lights, Plugs, Servers)
+annual_operating_hours = 2600 # e.g., 50 hrs/week * 52 weeks
+base_electrical_kwh_yr = (lighting_equip_w / 1000) * annual_operating_hours
+
+# HVAC Energy Consumption (Using Chiller COP and Equivalent Full Load Hours)
+chiller_cop = 5.5 # Standard water-cooled chiller COP
+hvac_cooling_eflh = 1200 # Standard cooling hours for a moderate climate
+hvac_electrical_kw = (concept_cooling_tr * 3.516) / chiller_cop 
+hvac_electrical_kwh_yr = hvac_electrical_kw * hvac_cooling_eflh
+
+# Dynamic Total Calculation
+simulated_annual_kwh = base_electrical_kwh_yr + hvac_electrical_kwh_yr
+simulated_simulated_annual_kwh = simulated_annual_kwh / 12
+
+# Now, use `simulated_simulated_annual_kwh` anywhere the old code used the user-input `simulated_annual_kwh`
 
 connected_kw = st.sidebar.number_input("Connected Electrical Load (kW)", min_value=0.0, value=1000.0)
 demand_factor = st.sidebar.number_input("Demand Factor", min_value=0.1, max_value=1.0, value=0.75)
@@ -247,6 +276,7 @@ pump_head_m = st.sidebar.number_input("Pump Head (m)", min_value=1.0, value=35.0
 
 roof_area_m2 = st.sidebar.number_input("Available Solar Roof Area (m²)", min_value=1.0, value=3000.0)
 panel_wp = st.sidebar.number_input("Solar Panel Size (Wp)", min_value=100.0, value=550.0)
+
 
 
 st.sidebar.header("Weather & Psychrometric Inputs")
@@ -301,7 +331,7 @@ waste_recycling_percent = st.sidebar.number_input("Waste Recycling (%)", min_val
 
 # ================= CALCULATIONS =================
 
-annual_kwh, annual_cost, epi, co2_tons = calculate_energy(area_m2, monthly_kwh, tariff)
+annual_kwh, annual_cost, epi, co2_tons = calculate_energy(area_m2, simulated_annual_kwh, tariff)
 
 passive_score, cooling_reduction_percent = calculate_passive_score(
     roof_insulation,
@@ -334,7 +364,7 @@ reduced_load, solar_generation, net_zero_balance, net_zero_coverage = calculate_
     solar_generation_factor
 )
 
-daily_kwh = reduced_load / 365 if reduced_load > 0 else 0
+
 critical_load_kw, battery_kwh = calculate_battery_size(daily_kwh, backup_hours, critical_load_percent)
 
 daily_water_liters, annual_water_kl = calculate_water(occupancy, water_lpd)
@@ -344,7 +374,7 @@ kw_per_tr, hvac_status = calculate_hvac(chiller_kw, cooling_tr)
 lighting_w_m2, lighting_status = calculate_lighting(area_m2, lighting_kw)
 
 average_kw, estimated_max_kw, estimated_kva, recommended_transformer_kva = calculate_electrical(
-    monthly_kwh,
+    simulated_annual_kwh,
     power_factor,
     load_factor
 )
@@ -749,6 +779,8 @@ with tab_final:
 
     st.metric("CO₂ Avoided by Solar", f"{solar_co2_avoided_tons:.1f} tons/year")
 
+    st.subheader("Annual Energy")
+st.metric("Predicted Annual Energy Bill", f"₹ {annual_energy_bill:,.2f}")
 
 with tab_net_zero:
 
