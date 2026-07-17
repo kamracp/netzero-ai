@@ -93,7 +93,10 @@ AI-powered engineering tool for Net Zero buildings, energy optimization, and com
 - Engineering Calculation Modules  
 
 ---⚠️ This project is archived. All development has moved to Kamra BENAS.
-
+> ⚠️ **ARCHIVED** — This project has been merged into 
+> [Kamra BENAS](https://github.com/kamracp/Kamra_BENAS), 
+> our production-grade Net Zero & ESG Intelligence Platform.
+> No further development here.
 ## 📢 Author
 
 **Chander P. Kamra**  
