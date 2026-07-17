@@ -92,7 +92,7 @@ AI-powered engineering tool for Net Zero buildings, energy optimization, and com
 - Plotly  
 - Engineering Calculation Modules  
 
----
+---⚠️ This project is archived. All development has moved to Kamra BENAS.
 
 ## 📢 Author
 
