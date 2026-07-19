@@ -24,7 +24,11 @@ def dew_point(temp_c, rh_percent):
 
 
 def fresh_air_load_kw(outdoor_h, indoor_h, fresh_air_cfm):
-    mass_flow_kg_s = fresh_air_cfm * 0.000566 * 1.2
+    # 1 CFM = 0.0004719 m3/s. 
+    # Mass flow = Volumetric Flow * Density (1.2 kg/m3)
+    # 0.0004719 * 1.2 = 0.000566 kg/s per CFM
+    mass_flow_kg_s = fresh_air_cfm * 0.000566 
+    return mass_flow_kg_s * (outdoor_h - indoor_h)
     load_kw = mass_flow_kg_s * (outdoor_h - indoor_h)
     return max(load_kw, 0)
 
